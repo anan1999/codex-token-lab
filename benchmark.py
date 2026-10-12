@@ -13,8 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 RUNS = ROOT / "runs"
-VARIANTS = ("baseline", "lean-agents", "broad-skill", "targeted-skill", "quiet-test-skill")
-TASKS = ("bugfix", "log-triage", "noisy-tests")
+VARIANTS = ("baseline", "lean-agents", "broad-skill", "targeted-skill", "quiet-test-skill", "full-history", "handoff-file")
+TASKS = ("bugfix", "log-triage", "noisy-tests", "session-resume")
 
 LEAN_AGENTS = """# Project instructions
 
@@ -120,6 +120,20 @@ else:
 raise SystemExit(result.returncode)
 """
 
+HANDOFF = """# Session handoff
+
+Goal: update `src/store/promo.py` so `final_price` follows the agreed promotion rules.
+
+Verified decision:
+- Ordinary customers' discount is capped at 15 percent.
+- VIP customers may receive the full requested discount.
+- Negative discounts are treated as zero.
+- The final price may not be negative.
+
+Relevant check: `python -m unittest tests.test_promo`.
+No implementation or test run has been completed in this session.
+"""
+
 
 def put(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,6 +215,37 @@ class ReportTests(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 """)
+    if task == "session-resume":
+        put(path / "src" / "store" / "promo.py", """def final_price(subtotal: int, discount_percent: int, vip: bool = False) -> int:
+    return subtotal - subtotal * discount_percent // 100
+""")
+        put(path / "tests" / "test_promo.py", """import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from store.promo import final_price
+
+
+class PromoTests(unittest.TestCase):
+    def test_discount_cap(self):
+        self.assertEqual(final_price(100, 30), 85)
+
+    def test_vip_discount(self):
+        self.assertEqual(final_price(100, 30, vip=True), 70)
+
+    def test_negative_discount(self):
+        self.assertEqual(final_price(100, -10), 100)
+
+    def test_nonnegative_price(self):
+        self.assertEqual(final_price(100, 200, vip=True), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()
+""")
+        if variant == "handoff-file":
+            put(path / "HANDOFF.md", HANDOFF)
     if variant == "lean-agents":
         put(path / "AGENTS.md", LEAN_AGENTS)
     elif variant == "broad-skill":
@@ -226,7 +271,20 @@ def run_one(task: str, variant: str, repeat: int, model: str, timeout: int) -> d
         "log-triage": "Diagnose the first checkout failure in logs/service.log. Give its root cause and cite the log line. This is diagnosis only; do not edit files.",
         "noisy-tests": "The report total for [1, 2, 3] is wrong. Fix it and verify with the relevant test. The test emits a large amount of routine progress output.",
     }
-    prompt = prompts[task]
+    if task == "session-resume":
+        if variant == "full-history":
+            transcript = []
+            for n in range(90):
+                transcript.append(
+                    f"Earlier discussion {n + 1}: reviewed routine catalog formatting, naming, "
+                    "a shipping label, and report layout. No promotion rule was decided in this part."
+                )
+            transcript.append("Final verified decision: ordinary customers' discount is capped at 15 percent; VIP customers may receive the full requested discount; negative discounts count as zero; final price cannot be negative. Relevant code: src/store/promo.py. Verify with python -m unittest tests.test_promo.")
+            prompt = "Continue the previously agreed promotion change. Here is the full prior transcript:\n" + "\n".join(transcript) + "\nImplement and verify it."
+        else:
+            prompt = "Continue the previously agreed promotion change. Read HANDOFF.md, implement its verified decision, and run the relevant test."
+    else:
+        prompt = prompts[task]
     cmd = ["codex", "exec", "--ephemeral", "--skip-git-repo-check", "--json",
            "--sandbox", "workspace-write", "--model", model,
            "--config", 'model_reasoning_effort="low"', prompt]
@@ -262,6 +320,11 @@ def run_one(task: str, variant: str, repeat: int, model: str, timeout: int) -> d
                                 cwd=path, capture_output=True, text=True)
         correct = verify.returncode == 0 and "return sum(values)" in (path / "src/store/report.py").read_text(encoding="utf-8")
         test_claim = bool(re.search(r"test|unittest|passed", final, re.I))
+    elif task == "session-resume":
+        verify = subprocess.run(["python", "-m", "unittest", "tests.test_promo"],
+                                cwd=path, capture_output=True, text=True)
+        correct = verify.returncode == 0
+        test_claim = bool(re.search(r"test|unittest|passed", final, re.I))
     else:
         correct = "CHECKOUT_REGION" in final and bool(re.search(r"1790|1789|1791|config.py", final))
         test_claim = None
@@ -290,7 +353,12 @@ def main() -> None:
     results_file = ROOT / "results.json"
     results = json.loads(results_file.read_text(encoding="utf-8")) if results_file.exists() else []
     for task in args.tasks:
-        default_variants = ("baseline", "quiet-test-skill") if task == "noisy-tests" else VARIANTS[:4]
+        if task == "noisy-tests":
+            default_variants = ("baseline", "quiet-test-skill")
+        elif task == "session-resume":
+            default_variants = ("full-history", "handoff-file")
+        else:
+            default_variants = VARIANTS[:4]
         for variant in args.variants or default_variants:
             for repeat in range(args.start_repeat, args.start_repeat + args.repeats):
                 if args.prepare_only:

@@ -1,6 +1,6 @@
 # Pilot results — 2026-10-12
 
-Twenty Codex runs: three tasks, two runs per applicable variant. Every run completed its
+Twenty-four Codex runs: four tasks, two runs per applicable variant. Every run completed its
 task correctly. The second pass reversed variant order. These are exploratory measurements,
 not statistically reliable estimates of savings in other repositories.
 
@@ -23,6 +23,8 @@ JSONL `turn.completed.usage` event supplied token counts. `input_tokens` **inclu
 | 3,000-line log diagnosis | Conditional Skill + bounded excerpt script | 2/2 | 67,908; 50,734 | 59,321 | −28.4% |
 | 2,500-line test output | Plain Codex | 2/2 | 85,354; 84,675 | 85,015 | reference |
 | 2,500-line test output | Quiet-test Skill + output filter | 2/2 | 86,284; 86,474 | 86,379 | +1.6% |
+| Cross-session continuation | Replay prior transcript | 2/2 | 77,424; 77,868 | 77,646 | reference |
+| Cross-session continuation | Read concise `HANDOFF.md` | 2/2 | 67,335; 66,906 | 67,121 | −13.6% |
 
 Means are rounded to the nearest whole token. See [`benchmark.py`](benchmark.py) for fixture
 generation, exact prompts, variants, and correctness checks. Raw Codex events stay local;
@@ -42,6 +44,11 @@ they can contain machine-specific details.
 - In the noisy-test baseline, Codex redirected the large test output to `$null` and reported
   the pass result. The extra Skill and helper duplicated behavior Codex already performed in
   that run.
+- For cross-session continuation, a small `HANDOFF.md` preserved the four verified decisions
+  needed to pass the same tests. The comparison measures only the *new session's* input tokens.
+  It does not include the prior session's cost to write and verify the handoff. The simulated
+  full history contained 90 routine discussion entries plus the final decision. This is not
+  a test of Codex's built-in compaction.
 
 ## Practical decision
 
@@ -53,6 +60,5 @@ The `toolkit/` files are optional examples, not a claimed universal winner. For 
 run the baseline first. Keep only configuration that preserves correctness and measurably helps
 on several representative tasks.
 
-Handoff memory, semantic retrieval, external CLI proxies, and different models were not
-tested here. They require distinct task designs and would not be fairly ranked by these three
-short fixtures.
+Semantic retrieval, external CLI proxies, built-in compaction, and different models were not
+tested here. They require distinct task designs and cannot be fairly ranked by these fixtures.

@@ -20,6 +20,6 @@ locally, not the upstream repositories' exact code.
 | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Shell output compression proxy | Extra CLI | Can reduce tool output; separate installation/runtime |
 | [oraios/serena](https://github.com/oraios/serena) | Semantic code retrieval/editing | Extra MCP | Can help large repos; tool schemas and server add overhead |
 
-The local benchmark covers four Codex-native instruction patterns on a code fix and log triage.
-Handoff and semantic retrieval need different, longer tasks to be evaluated fairly; no savings
-claim is made for them here.
+The local benchmark covers four Codex-native instruction patterns on a code fix and log triage,
+a bounded test-output helper, and a separate cross-session handoff scenario. Semantic retrieval
+and external proxies need different environments and are not ranked here.
